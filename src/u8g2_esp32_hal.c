@@ -9,8 +9,6 @@
 
 #include "u8g2_esp32_hal.h"
 
-#include "display/display.h"
-
 static const char* TAG = "u8g2_hal";
 static const unsigned int I2C_TIMEOUT_MS = 1000;
 
@@ -19,6 +17,8 @@ static i2c_cmd_handle_t handle_i2c;      // I2C handle.
 static u8g2_esp32_hal_t u8g2_esp32_hal;  // HAL state data.
 
 #define HOST SPI2_HOST
+
+void display_disable(void);
 
 /*
  * Initialze the ESP32 HAL.
