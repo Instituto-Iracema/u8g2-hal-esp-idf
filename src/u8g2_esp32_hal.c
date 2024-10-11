@@ -9,6 +9,8 @@
 
 #include "u8g2_esp32_hal.h"
 
+#include "display/display.h"
+
 static const char* TAG = "u8g2_hal";
 static const unsigned int I2C_TIMEOUT_MS = 1000;
 
@@ -16,17 +18,7 @@ static spi_device_handle_t handle_spi;   // SPI handle.
 static i2c_cmd_handle_t handle_i2c;      // I2C handle.
 static u8g2_esp32_hal_t u8g2_esp32_hal;  // HAL state data.
 
-#define HOST    SPI2_HOST
-
-#undef ESP_ERROR_CHECK
-#define ESP_ERROR_CHECK(x)                   \
-  do {                                       \
-    esp_err_t rc = (x);                      \
-    if (rc != ESP_OK) {                      \
-      ESP_LOGE("err", "esp_err_t = %d", rc); \
-      assert(0 && #x);                       \
-    }                                        \
-  } while (0);
+#define HOST SPI2_HOST
 
 /*
  * Initialze the ESP32 HAL.
@@ -143,11 +135,19 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
       ESP_LOGI(TAG, "clk_speed %d", I2C_MASTER_FREQ_HZ);
       conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
       ESP_LOGI(TAG, "i2c_param_config %d", conf.mode);
-      ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
+      if (i2c_param_config(I2C_MASTER_NUM, &conf) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_param_config");
+        display_disable();
+        break;
+      }
       ESP_LOGI(TAG, "i2c_driver_install %d", I2C_MASTER_NUM);
-      ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode,
-                                         I2C_MASTER_RX_BUF_DISABLE,
-                                         I2C_MASTER_TX_BUF_DISABLE, 0));
+      if (i2c_driver_install(I2C_MASTER_NUM, conf.mode,
+                             I2C_MASTER_RX_BUF_DISABLE,
+                             I2C_MASTER_TX_BUF_DISABLE, 0) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_driver_install");
+        display_disable();
+        break;
+      }
       break;
     }
 
@@ -156,8 +156,12 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
       ESP_LOG_BUFFER_HEXDUMP(TAG, data_ptr, arg_int, ESP_LOG_VERBOSE);
 
       while (arg_int > 0) {
-        ESP_ERROR_CHECK(
-            i2c_master_write_byte(handle_i2c, *data_ptr, ACK_CHECK_EN));
+        if (i2c_master_write_byte(handle_i2c, *data_ptr, ACK_CHECK_EN) !=
+            ESP_OK) {
+          ESP_LOGE(TAG, "error on i2c_master_write_byte");
+          display_disable();
+          break;
+        }
         data_ptr++;
         arg_int--;
       }
@@ -168,17 +172,33 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
       uint8_t i2c_address = u8x8_GetI2CAddress(u8x8);
       handle_i2c = i2c_cmd_link_create();
       ESP_LOGD(TAG, "Start I2C transfer to %02X.", i2c_address >> 1);
-      ESP_ERROR_CHECK(i2c_master_start(handle_i2c));
-      ESP_ERROR_CHECK(i2c_master_write_byte(
-          handle_i2c, i2c_address | I2C_MASTER_WRITE, ACK_CHECK_EN));
+      if (i2c_master_start(handle_i2c) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_master_start");
+        display_disable();
+        break;
+      }
+      if (i2c_master_write_byte(handle_i2c, i2c_address | I2C_MASTER_WRITE,
+                                ACK_CHECK_EN) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_master_write_byte");
+        display_disable();
+        break;
+      }
       break;
     }
 
     case U8X8_MSG_BYTE_END_TRANSFER: {
       ESP_LOGD(TAG, "End I2C transfer.");
-      ESP_ERROR_CHECK(i2c_master_stop(handle_i2c));
-      ESP_ERROR_CHECK(i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c,
-                                           pdMS_TO_TICKS(I2C_TIMEOUT_MS)));
+      if (i2c_master_stop(handle_i2c) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_master_stop");
+        display_disable();
+        break;
+      }
+      if (i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c,
+                               pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != ESP_OK) {
+        ESP_LOGE(TAG, "error on i2c_master_cmd_begin");
+        display_disable();
+        break;
+      }
       i2c_cmd_link_delete(handle_i2c);
       break;
     }
